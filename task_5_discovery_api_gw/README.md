@@ -1,6 +1,6 @@
 # Настройка API gateway и Service Discovery
 
-Схема масштабирования: [drawio](arch.drawio) | [png](arch.png).
+Схема масштабирования: [png](arch.png).
 
 <summary> Инструкция </summary>
 
