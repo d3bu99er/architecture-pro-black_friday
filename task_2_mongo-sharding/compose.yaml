@@ -14,7 +14,7 @@ services:
       MONGODB_DATABASE_NAME: "somedb"
 
   configSrv:
-    image: dh-mirror.gitverse.ru/mongo:latest
+    image: docker.io/library/mongo:6.0
     container_name: configSrv
     restart: always
     ports:
@@ -39,7 +39,7 @@ services:
       start_period: 10s
 
   shard1:
-    image: dh-mirror.gitverse.ru/mongo:latest
+    image: docker.io/library/mongo:6.0
     container_name: shard1
     restart: always
     ports:
@@ -64,7 +64,7 @@ services:
       start_period: 10s
 
   shard2:
-    image: dh-mirror.gitverse.ru/mongo:latest
+    image: docker.io/library/mongo:6.0
     container_name: shard2
     restart: always
     ports:
@@ -89,7 +89,7 @@ services:
       start_period: 10s
 
   mongos_router:
-    image: dh-mirror.gitverse.ru/mongo:latest
+    image: docker.io/library/mongo:6.0
     container_name: mongos_router
     restart: always
     ports:
