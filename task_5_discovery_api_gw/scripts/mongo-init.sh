@@ -1,6 +1,8 @@
 #!/bin/bash
 
-docker-compose up -d
+docker compose up -d
+
+sleep 5
 
 docker exec config_srv mongosh --port 27021 --eval '
     rs.initiate(
