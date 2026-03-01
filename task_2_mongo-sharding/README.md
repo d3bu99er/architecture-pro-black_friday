@@ -1,107 +1,35 @@
-# Настройка шардирования и запуск системы
+# mongo-sharding
 
-Нижеприведенная последовательность команд составлена для быстрого запуска нужных сервисов. Для быстроты запуска и проверок можете воспользоваться [скриптом](run.sh).
+## Как запустить
 
-- Создание и запуск сервиса
-  ```bash
-  docker compose up -d
-  ```
+Запускаем mongodb с шардированием и приложение
 
-- Настройка сервиса конфигураций
-  ```bash
-  docker exec -it config_srv mongosh --port 27017
-  rs.status();  # MongoServerError[NotYetInitialized]: no replset config has been received
+```shell
+docker compose up -d
+```
 
-  rs.initiate(
-    {
-      _id : "config_server",
-      configsvr: true,
-      members: [
-        { _id : 0, host : "config_srv:27017" }
-      ]
-    }
-  );
-  rs.status();  # replica set description with the member "config_server".
-  exit();
-  ```
+Настраиваем конфигурацию для шардирования и заполняем mongodb данными
 
-- Настройка шардов
-  ```bash
-  docker exec -it shard1 mongosh --port 27018
-  rs.status();  # MongoServerError[NotYetInitialized]: no replset config has been received
+```shell
+./scripts/mongo-init.sh
+```
 
-  rs.initiate(
-      {
-        _id : "shard1",
-        members: [
-          { _id : 0, host : "shard1:27018" },
-        ]
-      }
-  );
-  rs.status();  # replica set description with the member "shard1".
-  exit();
+## Как проверить
 
-  docker exec -it shard2 mongosh --port 27019
-  rs.status();  # MongoServerError[NotYetInitialized]: no replset config has been received
+### Если вы запускаете проект на локальной машине
 
-  rs.initiate(
-      {
-        _id : "shard2",
-        members: [
-          { _id : 0, host : "shard2:27019" },
-        ]
-      }
-  );
-  rs.status();  # replica set description with the member "shard2".
-  exit();
-  ```
+Откройте в браузере http://localhost:8080
 
-- Запуск и настройка роутера
+### Если вы запускаете проект на предоставленной виртуальной машине
 
-  ```bash
-  docker exec -it mongos_router mongosh --port 27020
+Узнать белый ip виртуальной машины
 
-  sh.status();  # Много всего, важно: "shards[]"
-  sh.addShard("shard1/shard1:27018");
-  sh.addShard("shard2/shard2:27019");
-  sh.status();  # Много всего, важно: "shards[{shard1}, {shard2}]"
+```shell
+curl --silent http://ifconfig.me
+```
 
-  sh.status();  # Много всего, важно: shardedDataDistribution[] и databases: ['config']
-  sh.enableSharding("somedb");
-  sh.shardCollection("somedb.helloDoc", { "name" : "hashed" } );
-  sh.status();  # Много всего, важно: shardedDataDistribution['somedb.helloDoc'] и databases['config', 'somedb']
-  exit();
-  ```
+Откройте в браузере http://<ip виртуальной машины>:8080
 
-- Наполнение БД
-  ```bash
-  docker exec -it mongos_router mongosh --port 27020
+## Доступные эндпоинты
 
-  use somedb
-  print("Documents count: " + db.helloDoc.countDocuments());  # N
-  for(var i = 0; i < 1000; i++) {
-      db.helloDoc.insert({age:i, name:"ly"+i});
-  }
-  print("Documents count: " + db.helloDoc.countDocuments());  # N + 1000
-  exit();
-  ```
-
-- Проверка распределения данных по шардам (нет в [run.sh](run.sh))
-  ```bash
-  docker exec -it shard1 mongosh -port 27018
-  use somedb;
-  db.helloDoc.countDocuments();  # X1 - часть от общего количества документов в mongos_router
-  exit();
-
-  docker exec -it shard2 mongosh -port 27019
-  use somedb;
-  db.helloDoc.countDocuments();  # X2 - часть от общего количества документов в mongos_router
-  exit();
-
-  # X1 + X2 = N + 1000
-  ```
-
-- Для остановки и очистки volumes используйте команду
-  ```bash
-  docker-compose down -v
-  ```
+Список доступных эндпоинтов, swagger http://<ip виртуальной машины>:8080/docs

@@ -1,54 +1,55 @@
 #!/bin/bash
 
-docker-compose up -d
+docker compose exec -T configSrv mongosh --port 27017 --quiet <<EOF
+rs.initiate(
+  {
+    _id : "config_server",
+       configsvr: true,
+    members: [
+      { _id : 0, host : "configSrv:27017" }
+    ]
+  }
+);
+exit();
+EOF
 
-docker exec config_srv mongosh --port 27017 --eval '
-    rs.initiate(
-        {
-            _id : "config_server",
-            configsvr: true,
-            members: [
-                {_id : 0, host : "config_srv:27017" }
-            ]
-        }
-    );
-'
+docker compose exec -T shard1 mongosh --port 27018 --quiet <<EOF
+rs.initiate(
+    {
+      _id : "shard1",
+      members: [
+        { _id : 0, host : "shard1:27018" },
+      ]
+    }
+);
+exit();
+EOF
 
-docker exec shard1 mongosh --port 27018 --eval '
-    rs.initiate(
-        {
-            _id : "shard1",
-            members: [
-                { _id : 0, host : "shard1:27018" },
-            ]
-        }
-    );
-'
+docker compose exec -T shard2 mongosh --port 27019 --quiet <<EOF
+rs.initiate(
+    {
+      _id : "shard2",
+      members: [
+        { _id : 1, host : "shard2:27019" }
+      ]
+    }
+);
+exit();
+EOF
 
-docker exec shard2 mongosh --port 27019 --eval '
-    rs.initiate(
-        {
-            _id : "shard2",
-            members: [
-                { _id : 0, host : "shard2:27019" },
-            ]
-        }
-    );
-'
+sleep 2
 
-sleep 3
+docker compose exec -T mongos_router mongosh --port 27020 --quiet <<EOF
+sh.addShard( "shard1/shard1:27018");
+sh.addShard( "shard2/shard2:27019");
 
-docker exec mongos_router mongosh --port 27020 --eval '
-    sh.addShard("shard1/shard1:27018");
-    sh.addShard("shard2/shard2:27019");
-    sh.enableSharding("somedb");
-    sh.shardCollection("somedb.helloDoc", { "name" : "hashed" } );
-'
+sh.enableSharding("somedb");
+sh.shardCollection("somedb.helloDoc", { "name" : "hashed" } )
 
-read -p "Do you want to fill the database (Y/n)?" -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]
-then
-    docker cp ./fill_db.js mongos_router:/tmp/fill_db.js
-    docker exec mongos_router bash -c "mongosh --port 27020 < /tmp/fill_db.js"
-fi
+use somedb
+
+for(var i = 0; i < 1000; i++) db.helloDoc.insertOne({age:i, name:"ly"+i})
+
+db.helloDoc.countDocuments()
+exit();
+EOF
