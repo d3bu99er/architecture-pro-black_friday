@@ -35,6 +35,9 @@ ssh -L 8080:localhost:8080 user@remote_host
 ```
 
 При открытии http://localhost:8080 Вы должны увидеть:
+
+![RESULT](./result.jpg)
+
 ```json
 {
   "mongo_topology_type": "Sharded",
@@ -70,3 +73,9 @@ ssh -L 8080:localhost:8080 user@remote_host
 ## Доступные эндпоинты
 
 Список доступных эндпоинтов отобразится через swagger http://localhost:8080/docs
+
+## Остановите докер и удалите контейнеры
+
+```shell
+docker compose down
+```
