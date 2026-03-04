@@ -1,107 +1,81 @@
-# Настройка шардирования и запуск системы
+# mongo-sharding
 
-Нижеприведенная последовательность команд составлена для быстрого запуска нужных сервисов. Для быстроты запуска и проверок можете воспользоваться [скриптом](run.sh).
+## Как запустить
 
-- Создание и запуск сервиса
-  ```bash
-  docker-compose up -d
-  ```
+Запускаем mongodb с шардированием
+```shell
+docker compose up -d
+```
 
-- Настройка сервиса конфигураций
-  ```bash
-  docker exec -it config_srv mongosh --port 27017
-  rs.status();  # MongoServerError[NotYetInitialized]: no replset config has been received
+Настраиваем конфигурацию для шардирования и заполняем mongodb данными
 
-  rs.initiate(
-    {
-      _id : "config_server",
-      configsvr: true,
-      members: [
-        { _id : 0, host : "config_srv:27017" }
-      ]
+```shell
+./scripts/mongo-init.sh
+```
+
+Если скрипт .sh не запускается - установите dos2unix и подготовьте файл к запуску
+
+```shell
+chmod +x ./scripts/mongo-init.sh
+sudo apt install dos2unix
+dos2unix ./scripts/mongo-init.sh
+./scripts/mongo-init.sh
+```
+
+## Как проверить
+
+### Если вы запускаете проект на локальной машине
+
+Откройте в браузере http://localhost:8080
+
+### Если на другой машине - сначала прокиньте этот порт через ssh
+
+```shell
+ssh -L 8080:localhost:8080 user@remote_host
+```
+
+При открытии http://localhost:8080 Вы должны увидеть:
+
+![RESULT](./result.jpg)
+
+```json
+{
+  "mongo_topology_type": "Sharded",
+  "mongo_replicaset_name": null,
+  "mongo_db": "somedb",
+  "read_preference": "Primary()",
+  "mongo_nodes": [
+    [
+      "mongos_router",
+      27020]
+  ],
+  "mongo_primary_host": null,
+  "mongo_secondary_hosts": [],
+  "mongo_address": [
+    "mongos_router",
+    27020],
+  "mongo_is_primary": true,
+  "mongo_is_mongos": true,
+  "collections": {
+    "helloDoc": {
+      "documents_count": 1000
     }
-  );
-  rs.status();  # replica set description with the member "config_server".
-  exit();
-  ```
+  },
+  "shards": {
+    "shard1": "shard1/shard1:27018",
+    "shard2": "shard2/shard2:27019"
+  },
+  "cache_enabled": false,
+  "status": "OK"
+}
+```
 
-- Настройка шардов
-  ```bash
-  docker exec -it shard1 mongosh --port 27018
-  rs.status();  # MongoServerError[NotYetInitialized]: no replset config has been received
+## Доступные эндпоинты
 
-  rs.initiate(
-      {
-        _id : "shard1",
-        members: [
-          { _id : 0, host : "shard1:27018" },
-        ]
-      }
-  );
-  rs.status();  # replica set description with the member "shard1".
-  exit();
+Список доступных эндпоинтов отобразится через swagger http://localhost:8080/docs
 
-  docker exec -it shard2 mongosh --port 27019
-  rs.status();  # MongoServerError[NotYetInitialized]: no replset config has been received
+## Остановите докер и удалите контейнеры
 
-  rs.initiate(
-      {
-        _id : "shard2",
-        members: [
-          { _id : 0, host : "shard2:27019" },
-        ]
-      }
-  );
-  rs.status();  # replica set description with the member "shard2".
-  exit();
-  ```
-
-- Запуск и настройка роутера
-
-  ```bash
-  docker exec -it mongos_router mongosh --port 27020
-
-  sh.status();  # Много всего, важно: "shards[]"
-  sh.addShard("shard1/shard1:27018");
-  sh.addShard("shard2/shard2:27019");
-  sh.status();  # Много всего, важно: "shards[{shard1}, {shard2}]"
-
-  sh.status();  # Много всего, важно: shardedDataDistribution[] и databases: ['config']
-  sh.enableSharding("somedb");
-  sh.shardCollection("somedb.helloDoc", { "name" : "hashed" } );
-  sh.status();  # Много всего, важно: shardedDataDistribution['somedb.helloDoc'] и databases['config', 'somedb']
-  exit();
-  ```
-
-- Наполнение БД
-  ```bash
-  docker exec -it mongos_router mongosh --port 27020
-
-  use somedb
-  print("Documents count: " + db.helloDoc.countDocuments());  # N
-  for(var i = 0; i < 1000; i++) {
-      db.helloDoc.insert({age:i, name:"ly"+i});
-  }
-  print("Documents count: " + db.helloDoc.countDocuments());  # N + 1000
-  exit();
-  ```
-
-- Проверка распределения данных по шардам (нет в [run.sh](run.sh))
-  ```bash
-  docker exec -it shard1 mongosh -port 27018
-  use somedb;
-  db.helloDoc.countDocuments();  # X1 - часть от общего количества документов в mongos_router
-  exit();
-
-  docker exec -it shard2 mongosh -port 27019
-  use somedb;
-  db.helloDoc.countDocuments();  # X2 - часть от общего количества документов в mongos_router
-  exit();
-
-  # X1 + X2 = N + 1000
-  ```
-
-- Для остановки и очистки volumes используйте команду
-  ```bash
-  docker-compose down -v
-  ```
+```shell
+docker compose down
+```

@@ -1,108 +1,98 @@
-Вот переработанная версия `readme.md`:
-— формулировки полностью изменены,
-— стиль переписан,
-— команды оставлены без комментариев,
-— смысл сохранён.
+# Настройка API gateway и Service Discovery
 
----
+Схема масштабирования: [png](arch.png).
 
-# Развёртывание API Gateway и механизма Service Discovery
+<summary> Инструкция </summary>
 
-Схема архитектуры: [drawio](arch.drawio) | [png](arch.png)
+- Запуск и настройка необходимых сервисов.
+```shell
+./scripts/mongo-init.sh
+```
 
-В данном разделе описан эксперимент по организации шлюза API и динамического обнаружения сервисов. Несмотря на то, что подробная инструкция не требовалась, была выполнена самостоятельная настройка и тестирование решения. Описание носит более обзорный характер.
+Если скрипт .sh не запускается - установите dos2unix и подготовьте файл к запуску
 
-<details>
-<summary>Порядок действий</summary>
+```shell
+chmod +x ./scripts/mongo-init.sh
+sudo apt install dos2unix
+dos2unix ./scripts/mongo-init.sh
+./scripts/mongo-init.sh
+```
 
----
-
-* **Запуск всей системы**
-
+- Проверка работы балансировки:
   ```bash
-  ./run.sh
+  # Первый терминал: мониторинг логов 1ого инстанса
+  watch -d "docker compose logs pymongo_api1 | tail"
+
+  # Второй терминал: мониторинг логов 2ого инстанса
+  watch -d "docker compose logs pymongo_api2 | tail"
+
+  # Третий терминал: запросы
+  curl http://localhost:9080
+  curl http://localhost:9080
+  curl http://localhost:9080
+  # ...
   ```
+Ожидаемый результат: запросы распределяются между инстансами равномерно.
+![RESULT](./api_v1_v2_balance.jpg)
 
----
+В ходе тестирования были замечены локальные отклонения от равномерности (до 5 запросов), однако статистика неизбежно выравнивается с ростом числа запросов.
 
-* **Тестирование распределения нагрузки между инстансами**
-
-  Откройте три терминала.
-
+- Проверка отказоустойчивости:
   ```bash
-  watch -d "docker-compose logs pymongo_api1 | tail"
-  ```
+  # Первый терминал: мониторинг логов 1ого инстанса
+  watch -d "docker compose logs pymongo_api1 | tail"
 
-  ```bash
-  watch -d "docker-compose logs pymongo_api2 | tail"
-  ```
+  # Второй терминал: мониторинг логов 2ого инстанса
+  watch -d "docker compose logs pymongo_api2 | tail"
 
-  ```bash
-  curl http://localhost:9080
-  curl http://localhost:9080
-  curl http://localhost:9080
-  ```
-
-  Результат: обращения к шлюзу должны поочерёдно обрабатываться разными экземплярами сервиса. Возможны небольшие перекосы на малом числе запросов, однако при увеличении нагрузки распределение становится равномерным.
-
----
-
-* **Проверка поведения системы при отказе одного из сервисов**
-
-  Используются три терминала.
-
-  ```bash
-  watch -d "docker-compose logs pymongo_api1 | tail"
-  ```
-
-  ```bash
-  watch -d "docker-compose logs pymongo_api2 | tail"
-  ```
-
-  ```bash
-  docker-compose stop pymongo_api1
-  curl http://localhost:9080
-  curl http://localhost:9080
-  curl http://localhost:9080
-
-  docker-compose start pymongo_api1
-  docker-compose stop pymongo_api2
-  curl http://localhost:9080
-  curl http://localhost:9080
-  curl http://localhost:9080
-
-  docker-compose start pymongo_api2
+  # Третий терминал
+  docker compose stop pymongo_api1
   curl http://localhost:9080
   curl http://localhost:9080
   curl http://localhost:9080
   ```
-
-  Ожидаемое поведение:
-
-  * при остановке одного экземпляра весь трафик перенаправляется на оставшийся;
-  * после возврата отключённого сервиса нагрузка снова делится между ними;
-  * пользователю не возвращаются ошибки при переключении.
-
----
-
-* **Проверка механизма Service Discovery**
-
-  В трёх терминалах отслеживаются логи и выполняются управляющие запросы.
-
+   ![RESULT](./api_v1_v2_balance2.jpg)
+  
   ```bash
-  watch -d "docker-compose logs pymongo_api1 | tail"
+  docker compose start pymongo_api1
+  docker compose stop pymongo_api2
+  curl http://localhost:9080
+  curl http://localhost:9080
+  curl http://localhost:9080
   ```
+    ![RESULT](./api_v1_v2_balance3.jpg)
 
   ```bash
-  watch -d "docker-compose logs pymongo_api2 | tail"
+  docker compose start pymongo_api2
+  curl http://localhost:9080
+  curl http://localhost:9080
+  curl http://localhost:9080
   ```
+  ![RESULT](./api_v1_v2_balance4.jpg)
 
+  Ожидаемый результат:
+  - После отключения pymongo_api1 все запросы успешно обрабатываются pymongo_api2.
+  - После включения pymongo_api1 и включения pymongo_api2 все запросы успешно обрабатываются pymongo_api1.
+  - После включения pymongo_api2 запросы распределяются равномерно.
+
+
+
+- Проверка возможностей ServiceDiscovery:
   ```bash
+  # Первый терминал: мониторинг логов 1ого инстанса
+  watch -d "docker compose logs pymongo_api1 | tail"
+
+  # Второй терминал: мониторинг логов 2ого инстанса
+  watch -d "docker compose logs pymongo_api2 | tail"
+
+  # Третий терминал
+  # Дерегистрируем один из инстансов в Consul
   curl -X PUT "http://localhost:8500/v1/agent/service/deregister/pymongo-api1"
   curl http://localhost:9080
   curl http://localhost:9080
   curl http://localhost:9080
 
+  # Снова зарегистрируем один из инстансов в Consul
   curl "http://127.0.0.1:8500/v1/agent/service/register" -X PUT \
   -H "Content-Type: application/json" \
   -d '{
@@ -120,11 +110,6 @@
   curl http://localhost:9080
   curl http://localhost:9080
   ```
-
   Ожидаемый результат:
-
-  * после исключения сервиса из реестра запросы направляются только на доступный экземпляр;
-  * после повторной регистрации балансировка восстанавливается;
-  * система корректно реагирует на динамические изменения состава сервисов.
-
-</details>
+  - После дерегистрации pymongo_api1 все запросы успешно обрабатываются pymongo_api2.
+  - После повторной регистрации pymongo_api1 запросы распределяются равномерно.

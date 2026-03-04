@@ -1,167 +1,82 @@
-Вот обновлённая версия `readme.md`:
+# mongo-sharding
 
-* **все комментарии внутри команд удалены**,
-* описания шагов полностью переформулированы (смысл сохранён).
+## Как запустить
 
----
+Запускаем mongodb с шардированием и приложение
 
-# Развёртывание кластера MongoDB с шардингом и репликацией
+```shell
+docker compose up -d
+```
 
-Ниже представлена последовательность действий для поэтапной настройки кластера. Такой формат позволяет контролировать состояние системы на каждом этапе.
-При необходимости можно воспользоваться [скриптом](run.sh), который выполняет базовую автоматическую настройку.
+Настраиваем конфигурацию для шардирования и заполняем mongodb данными
 
----
+```shell
+./scripts/mongo-init.sh
+```
 
-* **Запуск контейнеров инфраструктуры**
+Если скрипт .sh не запускается - установите dos2unix и подготовьте файл к запуску
 
-  ```bash
-  docker-compose up -d
-  ```
+```shell
+chmod +x ./scripts/mongo-init.sh
+sudo apt install dos2unix
+dos2unix ./scripts/mongo-init.sh
+./scripts/mongo-init.sh
+```
 
----
+## Как проверить
 
-* **Инициализация конфигурационного replica set**
+### Если вы запускаете проект на локальной машине
 
-  ```bash
-  docker exec -it config_srv mongosh --port 27021
-  rs.status();
+Откройте в браузере http://localhost:8080
 
-  rs.initiate(
-    {
-      _id : "config_server",
-      configsvr: true,
-      members: [
-        { _id : 0, host : "config_srv:27021" }
-      ]
+### Если на другой машине - сначала прокиньте этот порт через ssh
+
+```shell
+ssh -L 8080:localhost:8080 user@remote_host
+```
+
+При открытии http://localhost:8080 Вы должны увидеть:
+
+![RESULT](./result.jpg)
+
+```json
+{
+  "mongo_topology_type": "Sharded",
+  "mongo_replicaset_name": null,
+  "mongo_db": "somedb",
+  "read_preference": "Primary()",
+  "mongo_nodes": [
+    [
+      "mongos_router",
+      27020]
+  ],
+  "mongo_primary_host": null,
+  "mongo_secondary_hosts": [],
+  "mongo_address": [
+    "mongos_router",
+    27020],
+  "mongo_is_primary": true,
+  "mongo_is_mongos": true,
+  "collections": {
+    "helloDoc": {
+      "documents_count": 1000
     }
-  );
-  rs.status();
-  exit();
-  ```
+  },
+  "shards": {
+    "shard1": "shard1/shard1_1:27014,shard1_2:27015,shard1_3:27016",
+    "shard2": "shard2/shard2_1:27017,shard2_2:27018,shard2_3:27019"
+  },
+  "cache_enabled": false,
+  "status": "OK"
+}
+```
 
----
+## Доступные эндпоинты
 
-* **Создание replica set для первого шарда**
+Список доступных эндпоинтов отобразится через swagger http://localhost:8080/docs
 
-  ```bash
-  docker exec -it shard1_repl1 mongosh --port 27022
-  rs.status();
-  rs.initiate(
-      {
-        _id : "shard1",
-        members: [
-          { _id : 0, host : "shard1_repl1:27022" },
-          { _id : 1, host : "shard1_repl2:27023" },
-          { _id : 2, host : "shard1_repl3:27024" }
-        ]
-      }
-  );
-  rs.status();
-  exit();
-  ```
+## Остановите докер и удалите контейнеры
 
----
-
-* **Создание replica set для второго шарда**
-
-  ```bash
-  docker exec -it shard2_repl1 mongosh --port 27025
-  rs.status();
-  rs.initiate(
-      {
-        _id : "shard2",
-        members: [
-          { _id : 0, host : "shard2_repl1:27025" },
-          { _id : 1, host : "shard2_repl2:27026" },
-          { _id : 2, host : "shard2_repl3:27027" }
-        ]
-      }
-  );
-  rs.status();
-  exit();
-  ```
-
----
-
-* **Подключение шардов к маршрутизатору и активация шардинга**
-
-  ```bash
-  docker exec -it mongos_router mongosh --port 27020
-
-  sh.status();
-  sh.addShard("shard1/shard1_repl1:27022");
-  sh.addShard("shard2/shard2_repl1:27025");
-  sh.status();
-
-  sh.status();
-  sh.enableSharding("somedb");
-  sh.shardCollection("somedb.helloDoc", { "name" : "hashed" } );
-  sh.status();
-  exit();
-  ```
-
----
-
-* **Добавление тестовых записей в коллекцию**
-
-  ```bash
-  docker exec -it mongos_router mongosh --port 27020
-
-  use somedb
-  print("Documents count: " + db.helloDoc.countDocuments());
-  for(var i = 0; i < 1000; i++) {
-      db.helloDoc.insert({age:i, name:"ly"+i});
-  }
-  print("Documents count: " + db.helloDoc.countDocuments());
-  exit();
-  ```
-
----
-
-* **Проверка распределения данных между шардами и их репликами**
-
-  ```bash
-  docker exec -it shard1_repl1 mongosh -port 27022
-  use somedb;
-  db.helloDoc.countDocuments();
-  db.helloDoc.distinct("name");
-  exit();
-
-  docker exec -it shard1_repl2 mongosh -port 27023
-  use somedb;
-  db.helloDoc.countDocuments();
-  db.helloDoc.distinct("name");
-  exit();
-
-  docker exec -it shard1_repl3 mongosh -port 27024
-  use somedb;
-  db.helloDoc.countDocuments();
-  db.helloDoc.distinct("name");
-  exit();
-
-  docker exec -it shard2_repl1 mongosh -port 27025
-  use somedb;
-  db.helloDoc.countDocuments();
-  db.helloDoc.distinct("name");
-  exit();
-
-  docker exec -it shard2_repl2 mongosh -port 27026
-  use somedb;
-  db.helloDoc.countDocuments();
-  db.helloDoc.distinct("name");
-  exit();
-
-  docker exec -it shard2_repl3 mongosh -port 27027
-  use somedb;
-  db.helloDoc.countDocuments();
-  db.helloDoc.distinct("name");
-  exit();
-  ```
-
----
-
-* **Остановка окружения и удаление всех данных**
-
-  ```bash
-  docker-compose down -v
-  ```
+```shell
+docker compose down
+```
